@@ -1,13 +1,11 @@
 package cmd
 
 import (
-	"encoding/json"
+	"SQL/controller"
 	"log"
-	"net/http"
-	"strconv"
-
-	"SQL/internal/postgres"
-	"SQL/internal/repository"
+	"rest api 2/internal/postgres"
+	"rest api 2/internal/repository"
+	"rest api 2/service"
 )
 
 // Run инициализирует и запускает приложение
@@ -24,35 +22,11 @@ func Run() error {
 	movieRepo := repository.NewMovie(db)
 	actorRepo := repository.NewActor(db)
 
-	// Инициализация handler  и HTTP-сервера
-	type Handler struct {
-		MovieRepo repository.Movie
-		ActorRepo repository.Actor
-	}
+	// Инициализация сервисов
+	movieService := service.NewMovie(movieRepo)
+	actorService := service.NewActor(actorRepo)
 
-	func (h Handler) GetMovie(w http.ResponseWriter, r *http.Request) {
-		idStr := r.URL.Query().Get("id")
-		id, err := strconv.Atoi(idStr)
-		if err != nil {
-			http.Error(w, "invalid id", http.StatusBadRequest)
-			return
-		}
-		movie, err := h.MovieRepo.GetByID(id)
-		if err != nil {
-			http.Error(w, "movie not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(movie)
-	}
+	// Инициализация контроллеров
+	cinematique := controller.NewCinematique(movieService, actorService)
 
-	handler := Handler{MovieRepo: movieRepo, ActorRepo: actorRepo}
-	http.HandleFunc("/movies/get", handler.GetMovie)
-
-	log.Println("Server started at :8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		log.Fatalf("Server failed: %v", err)
-	}
-
-	return nil
 }
