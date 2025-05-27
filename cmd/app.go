@@ -1,11 +1,14 @@
 package cmd
 
 import (
-	"SQL/controller"
 	"log"
-	"rest api 2/internal/postgres"
-	"rest api 2/internal/repository"
-	"rest api 2/service"
+	"cinematigue/internal/controller"
+	"cinematigue/internal/handlers"
+	"cinematigue/internal/postgres"
+	"cinematigue/internal/repository"
+	"cinematigue/internal/service"
+
+	"github.com/gin-gonic/gin"
 )
 
 // Run инициализирует и запускает приложение
@@ -27,6 +30,21 @@ func Run() error {
 	actorService := service.NewActor(actorRepo)
 
 	// Инициализация контроллеров
-	cinematique := controller.NewCinematique(movieService, actorService)
+	actorController := controller.NewActorController(actorService)
+	movieController := controller.NewMovieController(movieService)
 
+	// Инициализация хендлеров
+	actorHandler := handlers.NewActorHandler(actorController)
+	movieHandler := handlers.NewMovieHandler(movieController)
+
+	// Настройка роутера
+	router := gin.Default()
+
+	// Регистрация маршрутов
+	handlers.RegisterActorRoutes(router, actorHandler)
+	handlers.RegisterMovieRoutes(router, movieHandler)
+
+	// Запуск сервера
+	log.Println("Starting server on :8080")
+	return router.Run(":8080")
 }

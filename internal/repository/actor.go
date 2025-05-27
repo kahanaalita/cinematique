@@ -4,18 +4,10 @@ import (
 	"database/sql"
 	"errors"
 	"log"
-	"time"
 
+	"cinematigue/internal/domain"
 	sq "github.com/Masterminds/squirrel"
 )
-
-// Actor представляет собой структуру актера из БД
-type Actor struct {
-	ID        int
-	Name      string
-	Gender    string
-	BirthDate time.Time
-}
 
 // actor - репозиторий для работы с актерами
 type actor struct {
@@ -28,7 +20,7 @@ func NewActor(db *sql.DB) *actor {
 }
 
 // Create создает нового актера в базе данных
-func (a *actor) Create(actor Actor) (int, error) {
+func (a *actor) Create(actor domain.Actor) (int, error) {
 	query, args, err := sq.Insert("actors").
 		Columns("name", "gender", "birth_date").
 		Values(actor.Name, actor.Gender, actor.BirthDate).
@@ -48,28 +40,28 @@ func (a *actor) Create(actor Actor) (int, error) {
 }
 
 // GetByID получает актера по ID
-func (a *actor) GetByID(id int) (Actor, error) {
+func (a *actor) GetByID(id int) (domain.Actor, error) {
 	query, args, err := sq.Select("id", "name", "gender", "birth_date").
 		From("actors").
 		Where(sq.Eq{"id": id}).
 		PlaceholderFormat(sq.Dollar).
 		ToSql()
 	if err != nil {
-		return Actor{}, err
+		return domain.Actor{}, err
 	}
-	var actor Actor
+	var actor domain.Actor
 	err = a.db.QueryRow(query, args...).Scan(&actor.ID, &actor.Name, &actor.Gender, &actor.BirthDate)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Actor{}, errors.New("actor not found")
+			return domain.Actor{}, errors.New("actor not found")
 		}
-		return Actor{}, err
+		return domain.Actor{}, err
 	}
 	return actor, nil
 }
 
 // Update обновляет информацию об актере
-func (a *actor) Update(actor Actor) error {
+func (a *actor) Update(actor domain.Actor) error {
 	query, args, err := sq.Update("actors").
 		Set("name", actor.Name).
 		Set("gender", actor.Gender).
@@ -106,7 +98,7 @@ func (a *actor) Delete(id int) error {
 }
 
 // GetAll возвращает всех актеров
-func (a *actor) GetAll() ([]Actor, error) {
+func (a *actor) GetAll() ([]domain.Actor, error) {
 	query, args, err := sq.Select("id", "name", "gender", "birth_date").
 		From("actors").
 		PlaceholderFormat(sq.Dollar).
@@ -119,9 +111,9 @@ func (a *actor) GetAll() ([]Actor, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	actors := make([]Actor, 0)
+	actors := make([]domain.Actor, 0)
 	for rows.Next() {
-		var actor Actor
+		var actor domain.Actor
 		if err := rows.Scan(&actor.ID, &actor.Name, &actor.Gender, &actor.BirthDate); err != nil {
 			return nil, err
 		}
@@ -134,7 +126,7 @@ func (a *actor) GetAll() ([]Actor, error) {
 }
 
 // GetMovies возвращает все фильмы, в которых снимался актер
-func (a *actor) GetMovies(actorID int) ([]Movie, error) {
+func (a *actor) GetMovies(actorID int) ([]domain.Movie, error) {
 	query, args, err := sq.Select("f.id", "f.title", "f.description", "f.release_year", "f.rating").
 		From("films f").
 		Join("film_actor fa ON f.id = fa.film_id").
@@ -149,9 +141,9 @@ func (a *actor) GetMovies(actorID int) ([]Movie, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	movies := make([]Movie, 0)
+	movies := make([]domain.Movie, 0)
 	for rows.Next() {
-		var movie Movie
+		var movie domain.Movie
 		if err := rows.Scan(&movie.ID, &movie.Title, &movie.Description, &movie.ReleaseYear, &movie.Rating); err != nil {
 			return nil, err
 		}

@@ -1,12 +1,12 @@
 package controller
 
-// Cinematique объединяет сервисы фильмов и актеров в единый фасад
+// Cinematique объединяет сервисы фильмов и актеров
 type Cinematique struct {
 	Movie ServiceMovie
 	Actor ServiceActor
 }
 
-// NewCinematique создаёт новый экземпляр фасада
+// NewCinematique создаёт новый экземпляр
 func NewCinematique(movie ServiceMovie, actor ServiceActor) *Cinematique {
 	return &Cinematique{
 		Movie: movie,

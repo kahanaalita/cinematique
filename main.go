@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"SQL/cmd"
+	"cinematigue/cmd"
 )
 
 func main() {

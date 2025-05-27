@@ -5,17 +5,9 @@ import (
 	"errors"
 	"log"
 
+	domain "cinematigue/internal/domain"
 	sq "github.com/Masterminds/squirrel"
 )
-
-// Movie представляет собой структуру фильма из БД
-type Movie struct {
-	ID          int
-	Title       string
-	Description string
-	ReleaseYear int
-	Rating      float64
-}
 
 // movie - репозиторий для работы с фильмами
 type movie struct {
@@ -28,7 +20,7 @@ func NewMovie(db *sql.DB) *movie {
 }
 
 // Create создает новый фильм в базе данных
-func (m *movie) Create(movie Movie) (int, error) {
+func (m *movie) Create(movie domain.Movie) (int, error) {
 	query, args, err := sq.Insert("films").
 		Columns("title", "description", "release_year", "rating").
 		Values(movie.Title, movie.Description, movie.ReleaseYear, movie.Rating).
@@ -48,28 +40,28 @@ func (m *movie) Create(movie Movie) (int, error) {
 }
 
 // GetByID получает фильм по ID
-func (m *movie) GetByID(id int) (Movie, error) {
+func (m *movie) GetByID(id int) (domain.Movie, error) {
 	query, args, err := sq.Select("id", "title", "description", "release_year", "rating").
 		From("films").
 		Where(sq.Eq{"id": id}).
 		PlaceholderFormat(sq.Dollar).
 		ToSql()
 	if err != nil {
-		return Movie{}, err
+		return domain.Movie{}, err
 	}
-	var movie Movie
+	var movie domain.Movie
 	err = m.db.QueryRow(query, args...).Scan(&movie.ID, &movie.Title, &movie.Description, &movie.ReleaseYear, &movie.Rating)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Movie{}, errors.New("movie not found")
+			return domain.Movie{}, errors.New("movie not found")
 		}
-		return Movie{}, err
+		return domain.Movie{}, err
 	}
 	return movie, nil
 }
 
 // Update обновляет информацию о фильме
-func (m *movie) Update(movie Movie) error {
+func (m *movie) Update(movie domain.Movie) error {
 	query, args, err := sq.Update("films").
 		Set("title", movie.Title).
 		Set("description", movie.Description).
@@ -107,7 +99,7 @@ func (m *movie) Delete(id int) error {
 }
 
 // GetAll возвращает все фильмы
-func (m *movie) GetAll() ([]Movie, error) {
+func (m *movie) GetAll() ([]domain.Movie, error) {
 	query, args, err := sq.Select("id", "title", "description", "release_year", "rating").
 		From("films").
 		PlaceholderFormat(sq.Dollar).
@@ -120,9 +112,9 @@ func (m *movie) GetAll() ([]Movie, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	movies := make([]Movie, 0)
+	movies := make([]domain.Movie, 0)
 	for rows.Next() {
-		var movie Movie
+		var movie domain.Movie
 		if err := rows.Scan(&movie.ID, &movie.Title, &movie.Description, &movie.ReleaseYear, &movie.Rating); err != nil {
 			return nil, err
 		}

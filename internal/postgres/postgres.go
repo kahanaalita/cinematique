@@ -8,21 +8,13 @@ import (
 	"os"
 	"time"
 
+	"cinematigue/internal/config"
+
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
-// Конфигурация подключения к БД
-// Параметры могут быть заданы через переменные окружения:
-// DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_SSLMODE
-type Config struct {
-	Host     string // Хост БД (по умолчанию: localhost)
-	Port     string // Порт БД (по умолчанию: 5432)
-	Username string // Имя пользователя (по умолчанию: postgres)
-	Password string // Пароль (обязательный параметр)
-	DBName   string // Имя БД (по умолчанию: cinematheque)
-	SSLMode  string // Режим SSL (по умолчанию: disable)
-}
+// Конфигурация подключения к БД теперь находится в пакете config (internal/config/config.go)
 
 var (
 	ErrEmptyPassword = errors.New("database password not set")
@@ -30,16 +22,16 @@ var (
 )
 
 // GetConfig возвращает конфигурацию на основе переменных окружения
-func GetConfig() (Config, error) {
+func GetConfig() (config.Config, error) {
 	// Загрузка .env файла с игнорированием ошибки если файл не найден
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
 		log.Printf("Warning: error loading .env file: %v", err)
 	}
 
-	cfg := Config{
+	cfg := config.Config{
 		Host:     getEnv("DB_HOST", "localhost"),
 		Port:     getEnv("DB_PORT", "5432"),
-		Username: getEnv("DB_USER", "postgres"),
+		User:     getEnv("DB_USER", "postgres"),
 		Password: getEnv("DB_PASSWORD", ""),
 		DBName:   getEnv("DB_NAME", "cinematheque"),
 		SSLMode:  getEnv("DB_SSLMODE", "disable"),
@@ -69,7 +61,7 @@ func Connect() (*sql.DB, error) {
 
 	connStr := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		cfg.Host, cfg.Port, cfg.Username, cfg.Password, cfg.DBName, cfg.SSLMode,
+		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, cfg.SSLMode,
 	)
 
 	db, err := sql.Open("postgres", connStr)
