@@ -50,16 +50,18 @@ func (a *actor) GetByID(id int) (domain.Actor, error) {
 		PlaceholderFormat(sq.Dollar).
 		ToSql()
 	if err != nil {
-		return domain.Actor{}, err
+		return domain.Actor{}, fmt.Errorf("building query: %w", err)
 	}
+
 	var actor domain.Actor
 	err = a.db.QueryRow(query, args...).Scan(&actor.ID, &actor.Name, &actor.Gender, &actor.BirthDate)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return domain.Actor{}, errors.New("actor not found")
+			return domain.Actor{}, domain.ErrActorNotFound
 		}
-		return domain.Actor{}, err
+		return domain.Actor{}, fmt.Errorf("scanning actor: %w", err)
 	}
+
 	return actor, nil
 }
 
@@ -74,18 +76,38 @@ func (a *actor) Update(actor domain.Actor) error {
 		PlaceholderFormat(sq.Dollar).
 		ToSql()
 	if err != nil {
-		return err
+		return fmt.Errorf("building query: %w", err)
 	}
-	_, err = a.db.Exec(query, args...)
+
+	result, err := a.db.Exec(query, args...)
 	if err != nil {
 		log.Printf("Error updating actor: %v", err)
-		return err
+		return fmt.Errorf("executing update: %w", err)
 	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("getting rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return domain.ErrActorNotFound
+	}
+
 	return nil
 }
 
 // Delete удаляет актёра по ID
 func (a *actor) Delete(id int) error {
+	// Сначала проверяем существование актёра
+	_, err := a.GetByID(id)
+	if err != nil {
+		if errors.Is(err, domain.ErrActorNotFound) {
+			return domain.ErrActorNotFound
+		}
+		return fmt.Errorf("checking actor existence: %w", err)
+	}
+
 	tx, err := a.db.Begin()
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -163,18 +185,18 @@ func (a *actor) GetMovies(actorID int) ([]domain.Movie, error) {
 		PlaceholderFormat(sq.Dollar).
 		ToSql()
 	if err != nil {
-		return nil, err
+		return []domain.Movie{}, err
 	}
 	rows, err := a.db.Query(query, args...)
 	if err != nil {
-		return nil, err
+		return []domain.Movie{}, err
 	}
 	defer rows.Close()
-	var movies []domain.Movie
+	movies := []domain.Movie{}
 	for rows.Next() {
 		var movie domain.Movie
 		if err := rows.Scan(&movie.ID, &movie.Title, &movie.Description, &movie.ReleaseYear, &movie.Rating); err != nil {
-			return nil, err
+			return []domain.Movie{}, err
 		}
 		movies = append(movies, movie)
 	}
@@ -229,7 +251,11 @@ func (a *actor) GetAllActorsWithMovies() ([]domain.Actor, error) {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
 
-		if currentActor == nil || currentActor.ID != actorID {
+			if currentActor == nil || currentActor.ID != actorID {
+			// If we have a current actor, add it to the result before creating a new one
+			if currentActor != nil {
+				result = append(result, *currentActor)
+			}
 			currentActor = &domain.Actor{
 				ID:        actorID,
 				Name:      actorName,
@@ -237,7 +263,6 @@ func (a *actor) GetAllActorsWithMovies() ([]domain.Actor, error) {
 				BirthDate: actorBirthDate,
 				Movies:    []domain.Movie{},
 			}
-			result = append(result, *currentActor)
 		}
 
 		if movieID.Valid {
@@ -249,6 +274,11 @@ func (a *actor) GetAllActorsWithMovies() ([]domain.Actor, error) {
 				Rating:      rating.Float64,
 			})
 		}
+	}
+
+	// Add the last actor to the result
+	if currentActor != nil {
+		result = append(result, *currentActor)
 	}
 
 	if err = rows.Err(); err != nil {
@@ -266,22 +296,12 @@ func (a *actor) PartialUpdateActor(id int, update domain.ActorUpdate) error {
 	}
 
 	// Проверяем существование актёра
-	existsQuery, existsArgs, err := sq.Select("1").
-		From("actors").
-		Where(sq.Eq{"id": id}).
-		PlaceholderFormat(sq.Dollar).
-		ToSql()
+	_, err := a.GetByID(id)
 	if err != nil {
-		return fmt.Errorf("failed to build existence check query: %w", err)
-	}
-
-	var exists bool
-	err = a.db.QueryRow("SELECT EXISTS ("+existsQuery+")", existsArgs...).Scan(&exists)
-	if err != nil {
-		return fmt.Errorf("failed to check actor existence: %w", err)
-	}
-	if !exists {
-		return fmt.Errorf("actor with id %d not found", id)
+		if errors.Is(err, domain.ErrActorNotFound) {
+			return domain.ErrActorNotFound
+		}
+		return fmt.Errorf("checking actor existence: %w", err)
 	}
 
 	// Строим запрос на обновление

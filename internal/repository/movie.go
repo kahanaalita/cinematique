@@ -76,10 +76,17 @@ func (m *movie) Update(movie domain.Movie) error {
 	if err != nil {
 		return err
 	}
-	_, err = m.db.Exec(query, args...)
+	result, err := m.db.Exec(query, args...)
 	if err != nil {
 		log.Printf("Error updating movie: %v", err)
 		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return errors.New("no rows updated")
 	}
 	return nil
 }
@@ -152,6 +159,9 @@ func (m *movie) GetAll() ([]domain.Movie, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	if movies == nil {
+		movies = []domain.Movie{}
 	}
 	return movies, nil
 }
@@ -392,7 +402,9 @@ func (m *movie) GetMoviesForActor(actorID int) ([]domain.Movie, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-
+	if movies == nil {
+		movies = []domain.Movie{}
+	}
 	return movies, nil
 }
 
@@ -422,6 +434,9 @@ func (m *movie) SearchMoviesByTitle(titleFragment string) ([]domain.Movie, error
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	if movies == nil {
+		movies = []domain.Movie{}
 	}
 	return movies, nil
 }
@@ -454,6 +469,9 @@ func (m *movie) SearchMoviesByActorName(actorNameFragment string) ([]domain.Movi
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	if movies == nil {
+		movies = []domain.Movie{}
 	}
 	return movies, nil
 }
@@ -493,6 +511,9 @@ func (m *movie) GetAllMoviesSorted(sortField, sortOrder string) ([]domain.Movie,
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	if movies == nil {
+		movies = []domain.Movie{}
+	}
 	return movies, nil
 }
 
@@ -516,10 +537,17 @@ func (m *movie) PartialUpdateMovie(id int, update domain.MovieUpdate) error {
 	if err != nil {
 		return err
 	}
-	_, err = m.db.Exec(query, args...)
+	result, err := m.db.Exec(query, args...)
 	if err != nil {
 		log.Printf("Error partial updating movie: %v", err)
 		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return errors.New("no rows updated")
 	}
 	return nil
 }

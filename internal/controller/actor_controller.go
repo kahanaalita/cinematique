@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -21,6 +22,9 @@ func (c *actorController) PartialUpdateActor(ctx *gin.Context, id int, update dt
 	// Получаем текущие данные актёра
 	actor, err := c.actorService.GetByID(id)
 	if err != nil {
+		if errors.Is(err, domain.ErrActorNotFound) {
+			return domain.ErrActorNotFound
+		}
 		return fmt.Errorf("getting actor: %w", err)
 	}
 
@@ -118,7 +122,10 @@ func (c *actorController) CreateActor(ctx *gin.Context, req dto.CreateActorReque
 func (c *actorController) GetActorByID(ctx *gin.Context, id int) (dto.ActorResponse, error) {
 	actor, err := c.actorService.GetByID(id)
 	if err != nil {
-		return dto.ActorResponse{}, err
+		if errors.Is(err, domain.ErrActorNotFound) {
+			return dto.ActorResponse{}, domain.ErrActorNotFound
+		}
+		return dto.ActorResponse{}, fmt.Errorf("getting actor: %w", err)
 	}
 	return dto.ActorResponse{
 		ID:        actor.ID,
@@ -132,6 +139,9 @@ func (c *actorController) GetActorByID(ctx *gin.Context, id int) (dto.ActorRespo
 func (c *actorController) UpdateActor(ctx *gin.Context, id int, req dto.UpdateActorRequest) (dto.ActorResponse, error) {
 	actor, err := c.actorService.GetByID(id)
 	if err != nil {
+		if errors.Is(err, domain.ErrActorNotFound) {
+			return dto.ActorResponse{}, domain.ErrActorNotFound
+		}
 		return dto.ActorResponse{}, fmt.Errorf("getting actor: %w", err)
 	}
 
@@ -182,6 +192,15 @@ func (c *actorController) UpdateActor(ctx *gin.Context, id int, req dto.UpdateAc
 
 // DeleteActor удаляет актёра.
 func (c *actorController) DeleteActor(ctx *gin.Context, id int) error {
+	// Проверяем существование актёра
+	_, err := c.actorService.GetByID(id)
+	if err != nil {
+		if errors.Is(err, domain.ErrActorNotFound) {
+			return domain.ErrActorNotFound
+		}
+		return fmt.Errorf("getting actor: %w", err)
+	}
+
 	// Проверяем, есть ли у актёра связанные фильмы
 	movies, err := c.actorService.GetMovies(id)
 	if err != nil {
@@ -190,7 +209,11 @@ func (c *actorController) DeleteActor(ctx *gin.Context, id int) error {
 	if len(movies) > 0 {
 		return fmt.Errorf("cannot delete actor: has %d related movies. Remove movies first", len(movies))
 	}
+
 	if err := c.actorService.Delete(id); err != nil {
+		if errors.Is(err, domain.ErrActorNotFound) {
+			return domain.ErrActorNotFound
+		}
 		return fmt.Errorf("deleting actor: %w", err)
 	}
 	return nil
@@ -233,12 +256,17 @@ func (c *actorController) GetAllActorsWithMovies(ctx *gin.Context) (dto.ActorsWi
 		movies := make([]dto.MovieResponse, 0, len(actor.Movies))
 		for _, movie := range actor.Movies {
 			// Преобразуем актёров фильма (если есть)
-			actors := make([]dto.ActorPreview, 0, len(movie.Actors))
-			for _, actor := range movie.Actors {
-				actors = append(actors, dto.ActorPreview{
-					ID:   actor.ID,
-					Name: actor.Name,
-				})
+			var actorsList []dto.ActorPreview
+			if len(movie.Actors) > 0 {
+				actorsList = make([]dto.ActorPreview, 0, len(movie.Actors))
+				for _, actor := range movie.Actors {
+					actorsList = append(actorsList, dto.ActorPreview{
+						ID:   actor.ID,
+						Name: actor.Name,
+					})
+				}
+			} else {
+				actorsList = nil
 			}
 
 			movies = append(movies, dto.MovieResponse{
@@ -247,7 +275,7 @@ func (c *actorController) GetAllActorsWithMovies(ctx *gin.Context) (dto.ActorsWi
 				Description: movie.Description,
 				ReleaseYear: movie.ReleaseYear,
 				Rating:      movie.Rating,
-				Actors:      actors,
+				Actors:      actorsList,
 			})
 		}
 

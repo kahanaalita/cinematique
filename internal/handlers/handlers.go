@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"cinematigue/internal/auth"
 	"cinematigue/internal/controller/dto"
+	"cinematigue/internal/domain"
 	"github.com/gin-gonic/gin"
 )
 
@@ -66,6 +68,21 @@ func (h *ActorHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
+
+	// Validate required fields
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Name is required"})
+		return
+	}
+	if req.Gender == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Gender is required"})
+		return
+	}
+	if req.BirthDate == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "BirthDate is required"})
+		return
+	}
+
 	resp, err := h.controller.CreateActor(c, req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -103,7 +120,7 @@ func (h *ActorHandler) Update(c *gin.Context) {
 	}
 	resp, err := h.controller.UpdateActor(c, id, req)
 	if err != nil {
-		if err.Error() == "actor not found" {
+		if errors.Is(err, domain.ErrActorNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -120,13 +137,14 @@ func (h *ActorHandler) PartialUpdate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
+	
 	var update dto.ActorUpdate
 	if err := c.ShouldBindJSON(&update); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 	if err := h.controller.PartialUpdateActor(c, id, update); err != nil {
-		if err.Error() == "actor not found" {
+		if errors.Is(err, domain.ErrActorNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -145,7 +163,7 @@ func (h *ActorHandler) Delete(c *gin.Context) {
 	}
 	err = h.controller.DeleteActor(c, id)
 	if err != nil {
-		if err.Error() == "actor not found" {
+		if errors.Is(err, domain.ErrActorNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -183,6 +201,21 @@ func (h *MovieHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
+
+	// Валидация обязательных полей
+	if req.Title == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Title is required"})
+		return
+	}
+	if req.Description == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Description is required"})
+		return
+	}
+	if req.Rating < 0 || req.Rating > 10 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Rating must be between 0 and 10"})
+		return
+	}
+
 	resp, err := h.controller.CreateMovie(c, req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

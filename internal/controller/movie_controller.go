@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"strings"
@@ -74,7 +75,10 @@ func (c *movieController) CreateMovie(ctx *gin.Context, req dto.CreateMovieReque
 func (c *movieController) GetMovieByID(ctx *gin.Context, id int) (dto.MovieResponse, error) {
 	movie, err := c.movieService.GetByID(id)
 	if err != nil {
-		return dto.MovieResponse{}, err
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return dto.MovieResponse{}, domain.ErrMovieNotFound
+		}
+		return dto.MovieResponse{}, fmt.Errorf("getting movie: %w", err)
 	}
 
 	return c.toMovieResponse(movie), nil
@@ -84,7 +88,10 @@ func (c *movieController) GetMovieByID(ctx *gin.Context, id int) (dto.MovieRespo
 func (c *movieController) UpdateMovie(ctx *gin.Context, id int, req dto.UpdateMovieRequest) (dto.MovieResponse, error) {
 	movie, err := c.movieService.GetByID(id)
 	if err != nil {
-		return dto.MovieResponse{}, err
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return dto.MovieResponse{}, domain.ErrMovieNotFound
+		}
+		return dto.MovieResponse{}, fmt.Errorf("getting movie: %w", err)
 	}
 
 	// Валидация обновляемых полей
@@ -142,7 +149,13 @@ func (c *movieController) UpdateMovie(ctx *gin.Context, id int, req dto.UpdateMo
 
 // DeleteMovie удаляет фильм
 func (c *movieController) DeleteMovie(ctx *gin.Context, id int) error {
-	return c.movieService.Delete(id)
+	if err := c.movieService.Delete(id); err != nil {
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return domain.ErrMovieNotFound
+		}
+		return fmt.Errorf("deleting movie: %w", err)
+	}
+	return nil
 }
 
 // ListMovies возвращает все фильмы
@@ -197,12 +210,17 @@ func (c *movieController) GetAllMoviesSorted(ctx *gin.Context) (dto.MoviesListRe
 // toMovieResponse конвертирует Movie в DTO
 func (c *movieController) toMovieResponse(movie domain.Movie) dto.MovieResponse {
 	// Конвертируем актеров в формат DTO
-	actorPreviews := make([]dto.ActorPreview, 0, len(movie.Actors))
-	for _, actor := range movie.Actors {
-		actorPreviews = append(actorPreviews, dto.ActorPreview{
-			ID:   actor.ID,
-			Name: actor.Name,
-		})
+	var actorPreviews []dto.ActorPreview
+	if len(movie.Actors) > 0 {
+		actorPreviews = make([]dto.ActorPreview, 0, len(movie.Actors))
+		for _, actor := range movie.Actors {
+			actorPreviews = append(actorPreviews, dto.ActorPreview{
+				ID:   actor.ID,
+				Name: actor.Name,
+			})
+		}
+	} else {
+		actorPreviews = nil
 	}
 
 	return dto.MovieResponse{
@@ -286,13 +304,19 @@ func (c *movieController) AddActorToMovie(ctx *gin.Context, movieID, actorID int
 	// Добавляем актёра в фильм
 	err := c.movieService.AddActor(movieID, actorID)
 	if err != nil {
-		return dto.MovieResponse{}, err
+		if errors.Is(err, domain.ErrMovieNotFound) || errors.Is(err, domain.ErrActorNotFound) {
+			return dto.MovieResponse{}, err
+		}
+		return dto.MovieResponse{}, fmt.Errorf("adding actor to movie: %w", err)
 	}
 
 	// Получаем обновлённый фильм
 	updatedMovie, err := c.movieService.GetByID(movieID)
 	if err != nil {
-		return dto.MovieResponse{}, err
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return dto.MovieResponse{}, domain.ErrMovieNotFound
+		}
+		return dto.MovieResponse{}, fmt.Errorf("getting updated movie: %w", err)
 	}
 
 	return c.toMovieResponse(updatedMovie), nil
@@ -303,13 +327,19 @@ func (c *movieController) RemoveActorFromMovie(ctx *gin.Context, movieID, actorI
 	// Удаляем актёра из фильма
 	err := c.movieService.RemoveActor(movieID, actorID)
 	if err != nil {
-		return dto.MovieResponse{}, err
+		if errors.Is(err, domain.ErrMovieNotFound) || errors.Is(err, domain.ErrActorNotFound) {
+			return dto.MovieResponse{}, err
+		}
+		return dto.MovieResponse{}, fmt.Errorf("removing actor from movie: %w", err)
 	}
 
 	// Получаем обновлённый фильм
 	updatedMovie, err := c.movieService.GetByID(movieID)
 	if err != nil {
-		return dto.MovieResponse{}, err
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return dto.MovieResponse{}, domain.ErrMovieNotFound
+		}
+		return dto.MovieResponse{}, fmt.Errorf("getting updated movie: %w", err)
 	}
 
 	return c.toMovieResponse(updatedMovie), nil
@@ -317,9 +347,18 @@ func (c *movieController) RemoveActorFromMovie(ctx *gin.Context, movieID, actorI
 
 // GetActorsForMovieByID возвращает актёров фильма
 func (c *movieController) GetActorsForMovieByID(ctx *gin.Context, movieID int) (dto.MovieActorsResponse, error) {
+	// Проверяем существование фильма
+	_, err := c.movieService.GetByID(movieID)
+	if err != nil {
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return dto.MovieActorsResponse{}, domain.ErrMovieNotFound
+		}
+		return dto.MovieActorsResponse{}, fmt.Errorf("checking movie existence: %w", err)
+	}
+
 	actors, err := c.movieService.GetActorsForMovieByID(movieID)
 	if err != nil {
-		return dto.MovieActorsResponse{}, err
+		return dto.MovieActorsResponse{}, fmt.Errorf("getting actors for movie: %w", err)
 	}
 
 	// Конвертируем актёров в DTO
@@ -338,9 +377,14 @@ func (c *movieController) GetActorsForMovieByID(ctx *gin.Context, movieID int) (
 
 // GetMoviesForActor возвращает фильмы по актёру
 func (c *movieController) GetMoviesForActor(ctx *gin.Context, actorID int) (dto.ActorMoviesResponse, error) {
+	// TODO: Добавить проверку существования актёра, когда будет доступен сервис актёров
+
 	movies, err := c.movieService.GetMoviesForActor(actorID)
 	if err != nil {
-		return dto.ActorMoviesResponse{}, err
+		if errors.Is(err, domain.ErrActorNotFound) {
+			return dto.ActorMoviesResponse{}, domain.ErrActorNotFound
+		}
+		return dto.ActorMoviesResponse{}, fmt.Errorf("getting movies for actor: %w", err)
 	}
 
 	return dto.ActorMoviesResponse{
@@ -353,6 +397,9 @@ func (c *movieController) PartialUpdateMovie(ctx *gin.Context, id int, update dt
 	// Получаем текущий фильм
 	movie, err := c.movieService.GetByID(id)
 	if err != nil {
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return domain.ErrMovieNotFound
+		}
 		return fmt.Errorf("getting movie: %w", err)
 	}
 

@@ -2,6 +2,8 @@ package service
 
 import (
 	"cinematigue/internal/domain"
+	"errors"
+	"fmt"
 )
 
 // StoreActor определяет интерфейс для работы с хранилищем актёров
@@ -26,20 +28,82 @@ func NewActor(store StoreActor) *ActorService {
 	return &ActorService{store: store}
 }
 
-// Методы реализующие интерфейс StoreActor
-func (s *ActorService) Create(actor domain.Actor) (int, error)        { return s.store.Create(actor) }
-func (s *ActorService) GetByID(id int) (domain.Actor, error)          { return s.store.GetByID(id) }
-func (s *ActorService) Update(actor domain.Actor) error               { return s.store.Update(actor) }
-func (s *ActorService) Delete(id int) error                          { return s.store.Delete(id) }
-func (s *ActorService) GetAll() ([]domain.Actor, error)               { return s.store.GetAll() }
-func (s *ActorService) GetMovies(actorID int) ([]domain.Movie, error) { return s.store.GetMovies(actorID) }
+// Create создаёт нового актёра
+func (s *ActorService) Create(actor domain.Actor) (int, error) {
+	return s.store.Create(actor)
+}
+
+// GetByID возвращает актёра по ID
+func (s *ActorService) GetByID(id int) (domain.Actor, error) {
+	actor, err := s.store.GetByID(id)
+	if err != nil {
+		if errors.Is(err, domain.ErrActorNotFound) {
+			return domain.Actor{}, domain.ErrActorNotFound
+		}
+		return domain.Actor{}, fmt.Errorf("getting actor: %w", err)
+	}
+	return actor, nil
+}
+
+// Update обновляет данные актёра
+func (s *ActorService) Update(actor domain.Actor) error {
+	if err := s.store.Update(actor); err != nil {
+		if errors.Is(err, domain.ErrActorNotFound) {
+			return domain.ErrActorNotFound
+		}
+		return fmt.Errorf("updating actor: %w", err)
+	}
+	return nil
+}
+
+// Delete удаляет актёра
+func (s *ActorService) Delete(id int) error {
+	if err := s.store.Delete(id); err != nil {
+		if errors.Is(err, domain.ErrActorNotFound) {
+			return domain.ErrActorNotFound
+		}
+		return fmt.Errorf("deleting actor: %w", err)
+	}
+	return nil
+}
+
+// GetAll возвращает всех актёров
+func (s *ActorService) GetAll() ([]domain.Actor, error) {
+	actors, err := s.store.GetAll()
+	if err != nil {
+		return nil, fmt.Errorf("getting all actors: %w", err)
+	}
+	return actors, nil
+}
+
+// GetMovies возвращает фильмы актёра
+func (s *ActorService) GetMovies(actorID int) ([]domain.Movie, error) {
+	movies, err := s.store.GetMovies(actorID)
+	if err != nil {
+		if errors.Is(err, domain.ErrActorNotFound) {
+			return nil, domain.ErrActorNotFound
+		}
+		return nil, fmt.Errorf("getting actor movies: %w", err)
+	}
+	return movies, nil
+}
 
 // PartialUpdateActor обновляет только переданные поля актёра
 func (s *ActorService) PartialUpdateActor(id int, update domain.ActorUpdate) error {
-	return s.store.PartialUpdateActor(id, update)
+	if err := s.store.PartialUpdateActor(id, update); err != nil {
+		if errors.Is(err, domain.ErrActorNotFound) {
+			return domain.ErrActorNotFound
+		}
+		return fmt.Errorf("partially updating actor: %w", err)
+	}
+	return nil
 }
 
 // GetAllActorsWithMovies возвращает актёров с фильмами
 func (s *ActorService) GetAllActorsWithMovies() ([]domain.Actor, error) {
-	return s.store.GetAllActorsWithMovies()
+	actors, err := s.store.GetAllActorsWithMovies()
+	if err != nil {
+		return nil, fmt.Errorf("getting all actors with movies: %w", err)
+	}
+	return actors, nil
 }

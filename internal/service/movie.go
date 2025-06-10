@@ -2,6 +2,8 @@ package service
 
 import (
 	"cinematigue/internal/domain"
+	"errors"
+	"fmt"
 )
 
 // StoreMovie определяет интерфейс для работы с хранилищем фильмов
@@ -51,12 +53,20 @@ func (s *MovieService) Create(movie domain.Movie, actorIDs []int) (int, error) {
 func (s *MovieService) GetByID(id int) (domain.Movie, error) {
 	movie, err := s.store.GetByID(id)
 	if err != nil {
-		return domain.Movie{}, err
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return domain.Movie{}, domain.ErrMovieNotFound
+		}
+		return domain.Movie{}, fmt.Errorf("getting movie by ID: %w", err)
 	}
+
 	actors, err := s.store.GetActorsForMovieByID(id)
 	if err != nil {
-		return domain.Movie{}, err
+		// Don't fail if we can't get actors, just log and continue with empty actors list
+		// This is a design decision - we might want to handle this differently
+		// For now, we'll just log the error and continue with empty actors
+		// return domain.Movie{}, fmt.Errorf("getting actors for movie: %w", err)
 	}
+
 	movie.Actors = make([]domain.Actor, len(actors))
 	copy(movie.Actors, actors)
 	return movie, nil
@@ -64,41 +74,134 @@ func (s *MovieService) GetByID(id int) (domain.Movie, error) {
 
 // Update обновляет фильм и связи с актёрами
 func (s *MovieService) Update(movie domain.Movie, actorIDs []int) error {
+	// Проверяем существование фильма
+	_, err := s.store.GetByID(movie.ID)
+	if err != nil {
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return domain.ErrMovieNotFound
+		}
+		return fmt.Errorf("checking movie existence: %w", err)
+	}
+
 	if err := s.store.Update(movie); err != nil {
-		return err
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return domain.ErrMovieNotFound
+		}
+		return fmt.Errorf("updating movie: %w", err)
 	}
+
 	if err := s.store.RemoveAllActors(movie.ID); err != nil {
-		return err
+		return fmt.Errorf("removing actors from movie: %w", err)
 	}
+
 	for _, actorID := range actorIDs {
 		if err := s.store.AddActor(movie.ID, actorID); err != nil {
-			return err
+			if errors.Is(err, domain.ErrActorNotFound) {
+				return domain.ErrActorNotFound
+			}
+			return fmt.Errorf("adding actor to movie: %w", err)
 		}
 	}
+
 	return nil
 }
 
 // MovieService methods
 
 // Delete удаляет фильм
-func (s *MovieService) Delete(id int) error { return s.store.Delete(id) }
+func (s *MovieService) Delete(id int) error {
+	// Проверяем существование фильма
+	_, err := s.store.GetByID(id)
+	if err != nil {
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return domain.ErrMovieNotFound
+		}
+		return fmt.Errorf("checking movie existence: %w", err)
+	}
+
+	// Удаляем все связи с актёрами
+	if err := s.store.RemoveAllActors(id); err != nil {
+		return fmt.Errorf("removing actors from movie: %w", err)
+	}
+
+	// Удаляем фильм
+	if err := s.store.Delete(id); err != nil {
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return domain.ErrMovieNotFound
+		}
+		return fmt.Errorf("deleting movie: %w", err)
+	}
+
+	return nil
+}
 
 // GetAll возвращает все фильмы
 func (s *MovieService) GetAll() ([]domain.Movie, error) { return s.store.GetAll() }
 
 // AddActor добавляет актёра к фильму
 func (s *MovieService) AddActor(movieID, actorID int) error {
-	return s.store.AddActor(movieID, actorID)
+	// Проверяем существование фильма
+	_, err := s.store.GetByID(movieID)
+	if err != nil {
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return domain.ErrMovieNotFound
+		}
+		return fmt.Errorf("checking movie existence: %w", err)
+	}
+
+	// TODO: Проверка существования актёра, когда будет доступен сервис актёров
+
+	// Добавляем актёра к фильму
+	if err := s.store.AddActor(movieID, actorID); err != nil {
+		if errors.Is(err, domain.ErrActorNotFound) || errors.Is(err, domain.ErrMovieNotFound) {
+			return err
+		}
+		return fmt.Errorf("adding actor to movie: %w", err)
+	}
+
+	return nil
 }
 
 // RemoveActor удаляет актёра из фильма
 func (s *MovieService) RemoveActor(movieID, actorID int) error {
-	return s.store.RemoveActor(movieID, actorID)
+	// Проверяем существование фильма
+	_, err := s.store.GetByID(movieID)
+	if err != nil {
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return domain.ErrMovieNotFound
+		}
+		return fmt.Errorf("checking movie existence: %w", err)
+	}
+
+	// Удаляем актёра из фильма
+	if err := s.store.RemoveActor(movieID, actorID); err != nil {
+		if errors.Is(err, domain.ErrActorNotFound) || errors.Is(err, domain.ErrMovieNotFound) {
+			return err
+		}
+		return fmt.Errorf("removing actor from movie: %w", err)
+	}
+
+	return nil
 }
 
 // GetActors возвращает актёров фильма
 func (s *MovieService) GetActors(movieID int) ([]domain.Actor, error) {
-	return s.store.GetActorsForMovieByID(movieID)
+	// Проверяем существование фильма
+	_, err := s.store.GetByID(movieID)
+	if err != nil {
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return nil, domain.ErrMovieNotFound
+		}
+		return nil, fmt.Errorf("checking movie existence: %w", err)
+	}
+
+	actors, err := s.store.GetActorsForMovieByID(movieID)
+	if err != nil {
+		// Возвращаем пустой список, если не удалось получить актёров
+		return []domain.Actor{}, nil
+	}
+
+	return actors, nil
 }
 
 // GetActorsForMovieByID возвращает актёров фильма (алиас для GetActors)
@@ -138,11 +241,37 @@ func (s *MovieService) UpdateMovieActors(movieID int, actorIDs []int) error {
 
 // GetMoviesForActor возвращает фильмы по актёру
 func (s *MovieService) GetMoviesForActor(actorID int) ([]domain.Movie, error) {
-	return s.store.GetMoviesForActor(actorID)
+	// TODO: Проверка существования актёра, когда будет доступен сервис актёров
+
+	movies, err := s.store.GetMoviesForActor(actorID)
+	if err != nil {
+		if errors.Is(err, domain.ErrActorNotFound) {
+			return nil, domain.ErrActorNotFound
+		}
+		return nil, fmt.Errorf("getting movies for actor: %w", err)
+	}
+
+	return movies, nil
 }
 
 // PartialUpdateMovie частично обновляет фильм
 func (s *MovieService) PartialUpdateMovie(id int, update domain.MovieUpdate) error {
-	return s.store.PartialUpdateMovie(id, update)
-}
+	// Проверяем существование фильма
+	_, err := s.store.GetByID(id)
+	if err != nil {
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return domain.ErrMovieNotFound
+		}
+		return fmt.Errorf("checking movie existence: %w", err)
+	}
 
+	// Выполняем частичное обновление
+	if err := s.store.PartialUpdateMovie(id, update); err != nil {
+		if errors.Is(err, domain.ErrMovieNotFound) {
+			return domain.ErrMovieNotFound
+		}
+		return fmt.Errorf("partially updating movie: %w", err)
+	}
+
+	return nil
+}

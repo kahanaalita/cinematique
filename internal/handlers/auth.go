@@ -2,18 +2,17 @@ package handlers
 
 import (
 	"cinematigue/internal/controller/dto"
-	"cinematigue/internal/service"
 	"github.com/gin-gonic/gin"
 	"net/http"
 )
 
 // AuthHandler обрабатывает HTTP-запросы, связанные с аутентификацией
 type AuthHandler struct {
-	service *service.AuthService
+	service AuthService
 }
 
 // NewAuthHandler создаёт обработчик аутентификации
-func NewAuthHandler(service *service.AuthService) *AuthHandler {
+func NewAuthHandler(service AuthService) *AuthHandler {
 	return &AuthHandler{service: service}
 }
 
