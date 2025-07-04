@@ -1,0 +1,71 @@
+# Файлы окружения
+.env
+.env.*
+!.env.example
+
+# Логи
+*.log
+
+# Файлы macOS
+.DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
+.Trashes
+ehthumbs.db
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Бинарные файлы
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+cinematigue-app
+
+# Go specific
+/bin/
+/vendor/
+coverage.out
+
+# Environment files
+
+# Logs and databases
+*.log
+*.sql
+*.sqlite
+
+# Каталоги сборки
+/build/
+/dist/
+/tmp/
+/out-tsc/
+
+# Dependency directories
+/node_modules/
+
+# Debug files
+debug/
+
+# Local development files
+*.local
+
+# IDE specific files
+*.sublime-*
+*.sublime-workspace
+*.sublime-project
+
+# OS generated files
+.DS_Store?
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
