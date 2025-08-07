@@ -3,17 +3,18 @@ package handlers
 import (
 	"encoding/json" // Добавляем импорт encoding/json
 	"errors"
-	"fmt"          // Добавляем импорт fmt
-	"log"          // Добавляем импорт log
+	"fmt" // Добавляем импорт fmt
+	"log" // Добавляем импорт log
 	"net/http"
 	"strconv"
-	"strings"      // Добавляем импорт strings
-	"time" // Добавляем импорт time
+	"strings" // Добавляем импорт strings
+	"time"    // Добавляем импорт time
 
 	"cinematique/internal/auth"
 	"cinematique/internal/controller/dto"
 	"cinematique/internal/domain"
 	"cinematique/internal/kafka" // Добавляем импорт kafka
+	"cinematique/internal/keycloak"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
@@ -75,7 +76,7 @@ type ActorHandler struct {
 }
 
 type MovieHandler struct {
-	controller MovieController
+	controller   MovieController
 	producerPool *kafka.ProducerPool // Используем пул продюсеров
 }
 
@@ -162,7 +163,7 @@ func (h *ActorHandler) Update(c *gin.Context) {
 // PartialUpdate частично обновляет актёра
 func (h *ActorHandler) PartialUpdate(c *gin.Context) {
 	log.Println("Handling PATCH /api/actors/:id request")
-	
+
 	// Получаем ID актера из URL
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -196,7 +197,7 @@ func (h *ActorHandler) PartialUpdate(c *gin.Context) {
 	if err != nil {
 		errMsg := fmt.Sprintf("Error updating actor: %v", err)
 		log.Printf("Error: %s", errMsg)
-		
+
 		switch {
 		case errors.Is(err, domain.ErrActorNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": "actor not found"})
@@ -209,7 +210,7 @@ func (h *ActorHandler) PartialUpdate(c *gin.Context) {
 	}
 
 	log.Printf("Successfully updated actor with ID: %d", id)
-	
+
 	// Возвращаем обновленные данные актера
 	c.JSON(http.StatusOK, updatedActor)
 }
@@ -217,7 +218,7 @@ func (h *ActorHandler) PartialUpdate(c *gin.Context) {
 // Delete удаляет актёра
 func (h *ActorHandler) Delete(c *gin.Context) {
 	log.Printf("ActorHandler.Delete called with id: %s", c.Param("id"))
-	
+
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		log.Printf("Error parsing id: %v", err)
@@ -230,7 +231,7 @@ func (h *ActorHandler) Delete(c *gin.Context) {
 	if err != nil {
 		errMsg := err.Error()
 		fmt.Printf("=== Error in Delete handler: %v, type: %T ===\n", errMsg, err)
-		
+
 		switch {
 		case errors.Is(err, domain.ErrActorNotFound):
 			fmt.Println("=== Returning 404 Not Found ===")
@@ -244,7 +245,7 @@ func (h *ActorHandler) Delete(c *gin.Context) {
 		}
 		return
 	}
-	
+
 	fmt.Println("=== Actor deleted successfully, returning 204 No Content ===")
 	c.Status(http.StatusNoContent)
 }
@@ -643,17 +644,33 @@ func RegisterAuthRoutes(router *gin.RouterGroup, handler *AuthHandler) {
 	}
 }
 
+// RegisterRateLimitRoutes регистрирует маршруты для мониторинга rate limiting
+func RegisterRateLimitRoutes(router *gin.RouterGroup, handler *RateLimitHandler) {
+	if handler != nil {
+		rateLimitGroup := router.Group("/rate-limit")
+		{
+			rateLimitGroup.GET("/status", handler.GetStatus)
+		}
+	}
+}
+
 // RegisterAllRoutes регистрирует все маршруты
-func RegisterAllRoutes(router *gin.RouterGroup, actorHandler *ActorHandler, movieHandler *MovieHandler, authHandler *AuthHandler) {
+func RegisterAllRoutes(router *gin.RouterGroup, actorHandler *ActorHandler, movieHandler *MovieHandler, authHandler *AuthHandler, rateLimitHandler *RateLimitHandler) {
 	// 1. Регистрируем публичные маршруты (без аутентификации)
 	RegisterAuthRoutes(router, authHandler)
-	
+
 	// 2. Создаем группу для защищенных маршрутов
 	protected := router.Group("/")
-	// 3. Применяем middleware только к защищенным маршрутам
-	protected.Use(auth.JWTAuthMiddleware())
-	
+	// 3. Применяем гибридный middleware (поддерживает JWT и Keycloak)
+	keycloakManager := keycloak.GetGlobalManager()
+	var keycloakClient keycloak.KeycloakClient
+	if keycloakManager.IsEnabled() {
+		keycloakClient = keycloakManager.GetDefaultClient()
+	}
+	protected.Use(auth.HybridAuthMiddleware(keycloakClient))
+
 	// 4. Регистрируем защищенные маршруты
 	RegisterActorRoutes(protected, actorHandler, func(c *gin.Context) {})
 	RegisterMovieRoutes(protected, movieHandler)
+	RegisterRateLimitRoutes(protected, rateLimitHandler)
 }

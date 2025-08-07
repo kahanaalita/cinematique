@@ -30,6 +30,14 @@ ehthumbs.db
 *.test
 *.out
 cinematigue-app
+cinematique-app
+
+# Временные тестовые файлы
+test_*.go
+*_test_server.go
+simple_*.go
+mock_*.go
+temp_*.go
 
 # Go specific
 /bin/
@@ -69,3 +77,4 @@ debug/
 .Trashes
 ehthumbs.db
 Thumbs.db
+.kiro

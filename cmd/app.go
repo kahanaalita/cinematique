@@ -10,10 +10,13 @@ import (
 	"time"
 
 	"cinematique/internal/auth"
+	"cinematique/internal/config"
 	"cinematique/internal/controller"
 	"cinematique/internal/handlers"
 	"cinematique/internal/kafka"
+	"cinematique/internal/keycloak"
 	"cinematique/internal/postgres"
+	"cinematique/internal/ratelimit"
 	"cinematique/internal/repository"
 	"cinematique/internal/service"
 	"sync"
@@ -21,6 +24,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -73,9 +77,20 @@ func PrometheusMiddleware() gin.HandlerFunc {
 
 // Run инициализирует и запускает приложение с поддержкой корректного завершения (graceful shutdown)
 func Run() error {
+	// Загружаем конфигурацию
+	cfg := config.LoadConfig()
+
 	// Инициализируем JWT-ключ
 	if err := auth.InitJWTKey(); err != nil {
 		log.Fatalf("Failed to initialize JWT key: %v", err)
+	}
+
+	// Инициализируем Keycloak менеджер
+	if err := keycloak.InitializeGlobal(cfg.Keycloak.ToKeycloakConfig(), cfg.Keycloak.Enabled); err != nil {
+		log.Printf("Failed to initialize Keycloak: %v", err)
+		log.Println("Continuing without Keycloak support...")
+	} else if cfg.Keycloak.Enabled {
+		log.Println("Keycloak initialized successfully")
 	}
 
 	// Подключаемся к базе данных
@@ -89,15 +104,48 @@ func Run() error {
 	// Регистрируем метрики базы данных
 	postgres.RegisterDBMetrics(db)
 
+	// Инициализируем Redis клиента
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     "redis:6379",
+		Password: "",
+		DB:       0,
+	})
+
+	// Проверка подключения
+	if _, err := redisClient.Ping(context.Background()).Result(); err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+
+	// Инициализируем rate limiter
+	rateLimiter := ratelimit.NewRedisRateLimiter(
+		redisClient,
+		cfg.RateLimit.RequestsPerMinute,
+		time.Duration(cfg.RateLimit.WindowSeconds)*time.Second,
+	)
+
+	// Исправленная конфигурация rate limit
+	rateLimitConfig := ratelimit.Config{
+		Enabled:             cfg.RateLimit.Enabled,
+		RestrictedEndpoints: cfg.RateLimit.RestrictedEndpoints,
+		GetUserID: func(c *gin.Context) string {
+			if userID, exists := c.Get("user_id"); exists {
+				if id, ok := userID.(string); ok {
+					return id
+				}
+			}
+			return "anonymous"
+		},
+	}
+
 	// Инициализируем Kafka-продюсер и пул
 	kafkaBrokerAddress := os.Getenv("KAFKA_BROKER_ADDRESS")
 	if kafkaBrokerAddress == "" {
-		kafkaBrokerAddress = "kafka:9092" // Адрес по умолчанию для Kafka в docker-compose
+		kafkaBrokerAddress = "localhost:9092" // Адрес по умолчанию для Kafka в docker-compose
 	}
 	producerCfg := kafka.NewProducerConfig(kafkaBrokerAddress)
 	eventProducer := kafka.NewProducer(producerCfg)
 	eventProducerPool := kafka.NewProducerPool(eventProducer, 2, 256) // 2 воркера, буфер на 256 сообщений
-	defer eventProducerPool.Close()                                  // Корректно закрываем пул при завершении приложения
+	defer eventProducerPool.Close()                                   // Корректно закрываем пул при завершении приложения
 
 	// Инициализация Kafka-консьюмеров
 	userRegConsumer := kafka.NewConsumer(kafka.NewConsumerConfig(kafkaBrokerAddress, UserEventsGroup, UserRegistrationTopic))
@@ -146,6 +194,9 @@ func Run() error {
 	// Добавляем middleware для Prometheus
 	router.Use(PrometheusMiddleware())
 
+	// Добавляем Rate Limiting middleware
+	router.Use(ratelimit.Middleware(rateLimiter, rateLimitConfig))
+
 	// Добавляем endpoint для метрик Prometheus
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
@@ -153,7 +204,7 @@ func Run() error {
 	api := router.Group("/api")
 
 	// Регистрируем все маршруты (публичные и защищённые)
-	handlers.RegisterAllRoutes(api, actorHandler, movieHandler, authHandler)
+	handlers.RegisterAllRoutes(api, actorHandler, movieHandler, authHandler, nil)
 
 	// Создаём HTTP-сервер с настройками
 	srv := &http.Server{
